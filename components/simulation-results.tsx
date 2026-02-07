@@ -148,7 +148,7 @@ export default function SimulationResults({
 
       {/* Persona Results */}
       {results.length > 0 && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {results.map((result) => {
             const hasGauge = result.purchaseProbability >= 0;
             const isHigh = hasGauge && result.purchaseProbability >= 70;

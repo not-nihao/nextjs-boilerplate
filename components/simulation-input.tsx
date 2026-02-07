@@ -87,7 +87,7 @@ export default function SimulationInput({
         <h3 className="mb-4 text-sm font-medium text-foreground">
           Consumer Personas
         </h3>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
           {PERSONAS.map((persona) => {
             const isSelected = selectedPersonas.includes(persona.id);
             return (

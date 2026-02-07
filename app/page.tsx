@@ -243,7 +243,7 @@ export default function Home() {
   return (
     <div className="flex min-h-screen flex-col bg-background font-sans">
       <Header />
-      <main className="mx-auto flex w-full max-w-2xl flex-col gap-8 px-6 py-8">
+      <main className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-6 py-8 lg:px-8">
         <SimulationStatusBar phase={phase} errorMessage={errorMessage} />
 
         <SimulationInput
