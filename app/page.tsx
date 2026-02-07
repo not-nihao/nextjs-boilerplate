@@ -7,6 +7,7 @@ import SimulationResults, {
   type PersonaResult,
 } from "@/components/simulation-results";
 import SimulationStatusBar from "@/components/simulation-status-bar";
+import DAGVisualization from "@/components/dag-visualization";
 
 type SimulationPhase = "idle" | "running" | "completed" | "error";
 
@@ -262,6 +263,9 @@ export default function Home() {
           rawJson={rawJson}
         />
       </main>
+
+      {/* DAG Visualization - shows AI agents processing during API call */}
+      {phase === "running" && <DAGVisualization isActive={true} />}
     </div>
   );
 }
