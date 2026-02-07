@@ -10,6 +10,7 @@ export interface PersonaResult {
 
 interface SimulationResultsProps {
   results: PersonaResult[];
+  summary?: string;
   onRunAnother: () => void;
   rawJson?: string;
 }
@@ -65,28 +66,35 @@ function ProbabilityGauge({ value }: { value: number }) {
 
 export default function SimulationResults({
   results,
+  summary,
   onRunAnother,
   rawJson,
 }: SimulationResultsProps) {
   const [showRawJson, setShowRawJson] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  if (results.length === 0) return null;
+  if (results.length === 0 && !summary) return null;
 
   const handleCopy = () => {
-    const text = results
-      .map(
-        (r) =>
-          `${r.personaName}: ${r.purchaseProbability}% - ${r.decisionSummary}`
-      )
-      .join("\n\n");
-    navigator.clipboard.writeText(text);
+    let text = "";
+    if (summary) {
+      text = `Summary:\n${summary}\n\n`;
+    }
+    if (results.length > 0) {
+      text += results
+        .map(
+          (r) =>
+            `${r.personaName}: ${r.purchaseProbability >= 0 ? `${r.purchaseProbability}%` : "N/A"} - ${r.decisionSummary}`
+        )
+        .join("\n\n");
+    }
+    navigator.clipboard.writeText(text.trim());
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
           Simulation Results
@@ -107,51 +115,85 @@ export default function SimulationResults({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {results.map((result) => {
-          const hasGauge = result.purchaseProbability >= 0;
-          const isHigh = hasGauge && result.purchaseProbability >= 70;
-          return (
-            <div
-              key={result.personaName}
-              className={`rounded-xl border p-5 transition-all ${
-                isHigh
-                  ? "border-success/30 bg-success/5"
-                  : "border-border bg-card"
-              } ${!hasGauge ? "lg:col-span-2" : ""}`}
-            >
-              <div className="flex items-start gap-5">
-                {hasGauge && (
-                  <ProbabilityGauge value={result.purchaseProbability} />
-                )}
-                <div className="flex-1 min-w-0">
-                  <h3 className="text-sm font-semibold text-foreground">
-                    {result.personaName}
-                  </h3>
+      {/* Summary Section */}
+      {summary && (
+        <div className="rounded-xl border border-primary/20 bg-linear-to-br from-primary/5 to-transparent p-6">
+          <div className="flex items-start gap-3">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+              <svg
+                className="h-4 w-4 text-primary"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+                />
+              </svg>
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="text-sm font-semibold text-foreground mb-2">
+                Analysis Summary
+              </h3>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                {summary}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Persona Results */}
+      {results.length > 0 && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {results.map((result) => {
+            const hasGauge = result.purchaseProbability >= 0;
+            const isHigh = hasGauge && result.purchaseProbability >= 70;
+            return (
+              <div
+                key={result.personaName}
+                className={`rounded-xl border p-5 transition-all ${
+                  isHigh
+                    ? "border-success/30 bg-success/5"
+                    : "border-border bg-card"
+                } ${!hasGauge ? "sm:col-span-2" : ""}`}
+              >
+                <div className="flex items-start gap-5">
                   {hasGauge && (
-                    <>
-                      <p className="mt-1 text-xs font-medium text-muted-foreground">
-                        Purchase Probability
-                      </p>
-                      <div className="mt-3 w-full rounded-full bg-muted h-1.5">
-                        <div
-                          className={`h-1.5 rounded-full transition-all duration-1000 ease-out ${
-                            isHigh ? "bg-success" : result.purchaseProbability >= 40 ? "bg-primary" : "bg-muted-foreground"
-                          }`}
-                          style={{ width: `${result.purchaseProbability}%` }}
-                        />
-                      </div>
-                    </>
+                    <ProbabilityGauge value={result.purchaseProbability} />
                   )}
-                  <p className={`${hasGauge ? "mt-3" : "mt-2"} text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap`}>
-                    {result.decisionSummary}
-                  </p>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-sm font-semibold text-foreground">
+                      {result.personaName}
+                    </h3>
+                    {hasGauge && (
+                      <>
+                        <p className="mt-1 text-xs font-medium text-muted-foreground">
+                          Purchase Probability
+                        </p>
+                        <div className="mt-3 w-full rounded-full bg-muted h-1.5">
+                          <div
+                            className={`h-1.5 rounded-full transition-all duration-1000 ease-out ${
+                              isHigh ? "bg-success" : result.purchaseProbability >= 40 ? "bg-primary" : "bg-muted-foreground"
+                            }`}
+                            style={{ width: `${result.purchaseProbability}%` }}
+                          />
+                        </div>
+                      </>
+                    )}
+                    <p className={`${hasGauge ? "mt-3" : "mt-2"} text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap`}>
+                      {result.decisionSummary}
+                    </p>
+                  </div>
                 </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Raw JSON toggle */}
       {rawJson && (
