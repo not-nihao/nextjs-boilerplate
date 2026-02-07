@@ -16,67 +16,7 @@ interface PersonaFlowStatus {
   statusText: string;
 }
 
-const PERSONA_NAMES: Record<string, string> = {
-  "price-sensitive": "Price-Sensitive Shopper",
-  "impulse-buyer": "Impulse Buyer",
-  "brand-loyal": "Brand-Loyal Customer",
-  "value-skeptic": "Value-Conscious Skeptic",
-};
-
-const MOCK_RESULTS: Record<string, PersonaResult> = {
-  "price-sensitive": {
-    personaName: "Price-Sensitive Shopper",
-    purchaseProbability: 78,
-    decisionSummary:
-      "The 15% discount is a strong motivator. This shopper perceives high value relative to the discounted price point and is likely to convert, especially with a clear savings comparison.",
-  },
-  "impulse-buyer": {
-    personaName: "Impulse Buyer",
-    purchaseProbability: 65,
-    decisionSummary:
-      "The promotion creates enough urgency to trigger an impulse purchase, but the subscription model introduces hesitation around long-term commitment. A free trial could push conversion higher.",
-  },
-  "brand-loyal": {
-    personaName: "Brand-Loyal Customer",
-    purchaseProbability: 42,
-    decisionSummary:
-      "Without existing brand familiarity, this customer is unlikely to switch from their current provider. The discount alone is insufficient to overcome brand inertia and switching costs.",
-  },
-  "value-skeptic": {
-    personaName: "Value-Conscious Skeptic",
-    purchaseProbability: 28,
-    decisionSummary:
-      "This persona requires extensive proof of value before committing. The promotion lacks social proof, detailed feature comparisons, and a satisfaction guarantee that would reduce perceived risk.",
-  },
-};
-
-function getStatusMessages(personaId: string): string[] {
-  const messages: Record<string, string[]> = {
-    "price-sensitive": [
-      "Evaluating price sensitivity...",
-      "Analyzing discount impact...",
-      "Calculating purchase likelihood...",
-    ],
-    "impulse-buyer": [
-      "Assessing emotional triggers...",
-      "Evaluating urgency factors...",
-      "Modeling impulse response...",
-    ],
-    "brand-loyal": [
-      "Checking brand familiarity...",
-      "Assessing loyalty factors...",
-      "Evaluating switching cost...",
-    ],
-    "value-skeptic": [
-      "Analyzing value proposition...",
-      "Evaluating proof points...",
-      "Assessing risk tolerance...",
-    ],
-  };
-  return messages[personaId] || ["Processing...", "Analyzing...", "Deciding..."];
-}
-
-type SimulationPhase = "idle" | "running" | "completed";
+type SimulationPhase = "idle" | "running" | "completed" | "error";
 
 export default function Home() {
   const [prompt, setPrompt] = useState("");
@@ -91,6 +31,7 @@ export default function Home() {
   );
   const [results, setResults] = useState<PersonaResult[]>([]);
   const [rawJson, setRawJson] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
   const timeoutsRef = useRef<NodeJS.Timeout[]>([]);
 
   const clearTimeouts = () => {
@@ -104,107 +45,249 @@ export default function Home() {
     return id;
   };
 
-  const runSimulation = useCallback(() => {
+  /**
+   * Attempt to extract structured persona results from the raw API response.
+   * The agent may return data in various shapes, so we try several strategies.
+   */
+  function parseApiResponse(data: unknown): {
+    results: PersonaResult[];
+    raw: string;
+  } {
+    const raw = JSON.stringify(data, null, 2);
+
+    // If the response is already an array of PersonaResult-like objects
+    if (Array.isArray(data)) {
+      const mapped = data
+        .map(mapToPersonaResult)
+        .filter(Boolean) as PersonaResult[];
+      if (mapped.length > 0) return { results: mapped, raw };
+    }
+
+    // If it has a result / results / output / data key
+    const obj = data as Record<string, unknown>;
+    for (const key of [
+      "results",
+      "result",
+      "output",
+      "data",
+      "personas",
+      "response",
+    ]) {
+      const val = obj?.[key];
+      if (Array.isArray(val)) {
+        const mapped = val
+          .map(mapToPersonaResult)
+          .filter(Boolean) as PersonaResult[];
+        if (mapped.length > 0) return { results: mapped, raw };
+      }
+      if (val && typeof val === "object" && !Array.isArray(val)) {
+        const nested = val as Record<string, unknown>;
+        // Could be { personaName: ..., purchaseProbability: ... }
+        const single = mapToPersonaResult(nested);
+        if (single) return { results: [single], raw };
+      }
+      // If the value is a string, try to parse it as JSON
+      if (typeof val === "string") {
+        try {
+          const parsed = JSON.parse(val);
+          if (Array.isArray(parsed)) {
+            const mapped = parsed
+              .map(mapToPersonaResult)
+              .filter(Boolean) as PersonaResult[];
+            if (mapped.length > 0) return { results: mapped, raw };
+          }
+        } catch {
+          // not JSON — treat as plain text summary
+        }
+      }
+    }
+
+    // Fallback: treat the entire response as a single text result
+    const textContent = extractTextContent(data);
+    if (textContent) {
+      return {
+        results: [
+          {
+            personaName: "AI Agent Response",
+            purchaseProbability: -1, // signals "no gauge"
+            decisionSummary: textContent,
+          },
+        ],
+        raw,
+      };
+    }
+
+    return { results: [], raw };
+  }
+
+  function mapToPersonaResult(item: unknown): PersonaResult | null {
+    if (!item || typeof item !== "object") return null;
+    const obj = item as Record<string, unknown>;
+
+    const name =
+      (obj.personaName as string) ||
+      (obj.persona_name as string) ||
+      (obj.persona as string) ||
+      (obj.name as string) ||
+      "";
+
+    const prob =
+      typeof obj.purchaseProbability === "number"
+        ? obj.purchaseProbability
+        : typeof obj.purchase_probability === "number"
+          ? obj.purchase_probability
+          : typeof obj.probability === "number"
+            ? obj.probability
+            : typeof obj.score === "number"
+              ? obj.score
+              : -1;
+
+    const summary =
+      (obj.decisionSummary as string) ||
+      (obj.decision_summary as string) ||
+      (obj.summary as string) ||
+      (obj.reasoning as string) ||
+      (obj.explanation as string) ||
+      (obj.text as string) ||
+      (obj.message as string) ||
+      "";
+
+    if (!name && !summary) return null;
+
+    return {
+      personaName: name || "Persona",
+      purchaseProbability: prob,
+      decisionSummary: summary || "No summary provided.",
+    };
+  }
+
+  function extractTextContent(data: unknown): string {
+    if (typeof data === "string") return data;
+    if (!data || typeof data !== "object") return "";
+    const obj = data as Record<string, unknown>;
+    for (const key of [
+      "message",
+      "text",
+      "content",
+      "output",
+      "response",
+      "result",
+      "summary",
+    ]) {
+      if (typeof obj[key] === "string" && (obj[key] as string).length > 0) {
+        return obj[key] as string;
+      }
+    }
+    return "";
+  }
+
+  const runSimulation = useCallback(async () => {
     clearTimeouts();
     setIsRunning(true);
     setPhase("running");
     setResults([]);
     setRawJson("");
+    setErrorMessage("");
 
-    // Determine which personas to simulate
-    let personaIds: string[];
-    if (selectedPersonas.includes("orchestrator")) {
-      personaIds = [
-        "price-sensitive",
-        "impulse-buyer",
-        "brand-loyal",
-        "value-skeptic",
-      ];
-    } else {
-      personaIds = [...selectedPersonas];
-    }
-
-    // Phase 1: Orchestrator analyzing
-    setOrchestratorStatus("Analyzing promotion");
+    // Start the animated flow
+    setOrchestratorStatus("Sending prompt to agent");
     setPersonaStatuses([]);
 
-    // Phase 2: Orchestrator selecting personas
+    // Animate orchestrator status while waiting
     addTimeout(() => {
-      setOrchestratorStatus("Selecting relevant personas");
-    }, 1500);
+      setOrchestratorStatus("Agent is analyzing promotion");
+    }, 2000);
 
-    // Phase 3: Initialize persona cards
     addTimeout(() => {
-      setOrchestratorStatus("Dispatching to persona agents");
-      setPersonaStatuses(
-        personaIds.map((id) => ({
-          id,
-          name: PERSONA_NAMES[id] || id,
-          status: "waiting",
-          statusText: "Queued",
+      setOrchestratorStatus("Simulating persona responses");
+      setPersonaStatuses([
+        {
+          id: "agent-1",
+          name: "AI Persona Agent",
+          status: "processing",
+          statusText: "Evaluating promotion...",
+        },
+      ]);
+    }, 4000);
+
+    addTimeout(() => {
+      setPersonaStatuses((prev) =>
+        prev.map((p) => ({
+          ...p,
+          statusText: "Generating decision analysis...",
         }))
       );
-    }, 3000);
+    }, 6000);
 
-    // Phase 4: Process each persona sequentially with status updates
-    personaIds.forEach((personaId, index) => {
-      const baseDelay = 4000 + index * 2500;
-      const messages = getStatusMessages(personaId);
+    try {
+      const res = await fetch("/api/simulate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: prompt }),
+      });
 
-      // Start processing
-      addTimeout(() => {
-        setPersonaStatuses((prev) =>
-          prev.map((p) =>
-            p.id === personaId
-              ? { ...p, status: "processing", statusText: messages[0] }
-              : p
-          )
-        );
-      }, baseDelay);
+      const data = await res.json();
 
-      // Mid-processing status update
-      addTimeout(() => {
-        setPersonaStatuses((prev) =>
-          prev.map((p) =>
-            p.id === personaId ? { ...p, statusText: messages[1] } : p
-          )
-        );
-      }, baseDelay + 800);
+      if (!res.ok) {
+        throw new Error(data.error || `API returned ${res.status}`);
+      }
 
-      // Final processing status
-      addTimeout(() => {
-        setPersonaStatuses((prev) =>
-          prev.map((p) =>
-            p.id === personaId ? { ...p, statusText: messages[2] } : p
-          )
-        );
-      }, baseDelay + 1600);
+      // Parse the agent response
+      const { results: parsedResults, raw } = parseApiResponse(data);
 
-      // Complete
-      addTimeout(() => {
-        setPersonaStatuses((prev) =>
-          prev.map((p) =>
-            p.id === personaId
-              ? { ...p, status: "completed", statusText: "Decision made" }
-              : p
-          )
-        );
-      }, baseDelay + 2200);
-    });
-
-    // Phase 5: Show results
-    const totalTime = 4000 + personaIds.length * 2500 + 500;
-    addTimeout(() => {
+      // Complete the flow animation
       setOrchestratorStatus("Simulation complete");
-      const simulationResults = personaIds.map(
-        (id) => MOCK_RESULTS[id] || MOCK_RESULTS["price-sensitive"]
+      setPersonaStatuses((prev) =>
+        prev.map((p) => ({
+          ...p,
+          status: "completed" as const,
+          statusText: "Decision made",
+        }))
       );
-      setResults(simulationResults);
-      setRawJson(JSON.stringify(simulationResults, null, 2));
+
+      if (parsedResults.length > 0) {
+        // Update persona flow cards with actual names
+        setPersonaStatuses(
+          parsedResults.map((r, i) => ({
+            id: `result-${i}`,
+            name: r.personaName,
+            status: "completed" as const,
+            statusText: "Decision made",
+          }))
+        );
+        setResults(parsedResults);
+      } else {
+        // No parseable results but we still have raw data
+        setResults([
+          {
+            personaName: "Agent Response",
+            purchaseProbability: -1,
+            decisionSummary:
+              "The agent returned data but it could not be parsed into persona results. Check the raw JSON below.",
+          },
+        ]);
+      }
+
+      setRawJson(raw);
       setIsRunning(false);
       setPhase("completed");
-    }, totalTime);
-  }, [selectedPersonas]);
+    } catch (err) {
+      clearTimeouts();
+      const msg = err instanceof Error ? err.message : String(err);
+      setErrorMessage(msg);
+      setOrchestratorStatus("Error occurred");
+      setPersonaStatuses((prev) =>
+        prev.map((p) => ({
+          ...p,
+          status: "completed" as const,
+          statusText: "Failed",
+        }))
+      );
+      setIsRunning(false);
+      setPhase("error");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prompt]);
 
   const handleRunAnother = () => {
     clearTimeouts();
@@ -213,6 +296,7 @@ export default function Home() {
     setRawJson("");
     setPersonaStatuses([]);
     setOrchestratorStatus("");
+    setErrorMessage("");
     setPrompt("");
     setSelectedPersonas(["orchestrator"]);
   };
@@ -221,7 +305,7 @@ export default function Home() {
     <div className="flex min-h-screen flex-col bg-background font-sans">
       <Header />
       <main className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-6 py-8">
-        <SimulationStatusBar phase={phase} />
+        <SimulationStatusBar phase={phase} errorMessage={errorMessage} />
 
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-5">
           {/* Left: Input Panel */}

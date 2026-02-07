@@ -109,7 +109,8 @@ export default function SimulationResults({
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {results.map((result) => {
-          const isHigh = result.purchaseProbability >= 70;
+          const hasGauge = result.purchaseProbability >= 0;
+          const isHigh = hasGauge && result.purchaseProbability >= 70;
           return (
             <div
               key={result.personaName}
@@ -117,26 +118,32 @@ export default function SimulationResults({
                 isHigh
                   ? "border-success/30 bg-success/5"
                   : "border-border bg-card"
-              }`}
+              } ${!hasGauge ? "lg:col-span-2" : ""}`}
             >
               <div className="flex items-start gap-5">
-                <ProbabilityGauge value={result.purchaseProbability} />
+                {hasGauge && (
+                  <ProbabilityGauge value={result.purchaseProbability} />
+                )}
                 <div className="flex-1 min-w-0">
                   <h3 className="text-sm font-semibold text-foreground">
                     {result.personaName}
                   </h3>
-                  <p className="mt-1 text-xs font-medium text-muted-foreground">
-                    Purchase Probability
-                  </p>
-                  <div className="mt-3 w-full rounded-full bg-muted h-1.5">
-                    <div
-                      className={`h-1.5 rounded-full transition-all duration-1000 ease-out ${
-                        isHigh ? "bg-success" : result.purchaseProbability >= 40 ? "bg-primary" : "bg-muted-foreground"
-                      }`}
-                      style={{ width: `${result.purchaseProbability}%` }}
-                    />
-                  </div>
-                  <p className="mt-3 text-sm text-muted-foreground leading-relaxed">
+                  {hasGauge && (
+                    <>
+                      <p className="mt-1 text-xs font-medium text-muted-foreground">
+                        Purchase Probability
+                      </p>
+                      <div className="mt-3 w-full rounded-full bg-muted h-1.5">
+                        <div
+                          className={`h-1.5 rounded-full transition-all duration-1000 ease-out ${
+                            isHigh ? "bg-success" : result.purchaseProbability >= 40 ? "bg-primary" : "bg-muted-foreground"
+                          }`}
+                          style={{ width: `${result.purchaseProbability}%` }}
+                        />
+                      </div>
+                    </>
+                  )}
+                  <p className={`${hasGauge ? "mt-3" : "mt-2"} text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap`}>
                     {result.decisionSummary}
                   </p>
                 </div>
